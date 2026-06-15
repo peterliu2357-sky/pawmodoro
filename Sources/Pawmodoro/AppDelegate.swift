@@ -2,20 +2,30 @@ import AppKit
 import PawmodoroKit
 
 /// Menu-bar presentation for the Work → Pounce → Rest loop. Holds the pure
-/// Session Engine and translates its state into a status-item countdown, a menu,
-/// and a placeholder Visual window. This layer is verified by manual QA; the
-/// behavior it drives lives in (and is tested through) `SessionEngine`.
+/// Session Engine and a Coverage Orchestrator, translating engine state into a
+/// status-item countdown, a menu, and (during a Rest) one cat Visual per
+/// display. This layer is verified by manual QA; the behavior it drives lives in
+/// (and is tested through) `SessionEngine` and `CoverageOrchestrator`.
 @MainActor
 final class AppDelegate: NSObject, NSApplicationDelegate {
     private var engine = SessionEngine(clock: SystemClock())
     private let statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
-    private var visual: VisualWindowController?
+    private let displayProvider = ScreenDisplayProvider()
+    private var coverage: CoverageOrchestrator?
     private var timer: Timer?
 
     private let startItem = NSMenuItem(title: "Start", action: #selector(start), keyEquivalent: "")
     private let stopItem = NSMenuItem(title: "Stop", action: #selector(stop), keyEquivalent: "")
 
     func applicationDidFinishLaunching(_ notification: Notification) {
+        coverage = CoverageOrchestrator(
+            displayProvider: displayProvider,
+            onShoo: { [weak self] in self?.resolveShoo() ?? .snappedBack },
+            makeVisual: { [weak self] id, shoo in
+                self?.makeVisual(for: id, onShoo: shoo) ?? VisualWindowController(screen: NSScreen.screens[0], onShoo: shoo)
+            }
+        )
+
         buildMenu()
         render()
 
@@ -26,6 +36,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
         RunLoop.main.add(timer, forMode: .common)
         self.timer = timer
+
+        // A monitor was plugged in or removed — update the cat set mid-Rest.
+        NotificationCenter.default.addObserver(
+            forName: NSApplication.didChangeScreenParametersNotification, object: nil, queue: .main
+        ) { [weak self] _ in
+            MainActor.assumeIsolated { self?.coverage?.displaysChanged() }
+        }
     }
 
     private func buildMenu() {
@@ -59,49 +76,68 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         render()
     }
 
-    /// The user flicked the Visual off an edge. The engine accepts the Shoo only
-    /// if the Rest has completed; otherwise it snaps back and the Rest continues.
-    @discardableResult
-    private func shoo() -> ShooOutcome {
+    /// A cat was flicked off an edge. The engine accepts the Shoo only if the
+    /// Rest has completed; otherwise it snaps back and the Rest continues. The
+    /// Orchestrator clears the cats on the other displays when this is accepted.
+    private func resolveShoo() -> ShooOutcome {
         let outcome = engine.attemptShoo()
-        render()
+        renderStatus()
         return outcome
     }
 
-    /// Single source of truth: reconcile the UI with the engine's state.
+    private func makeVisual(for id: DisplayID, onShoo: @escaping () -> ShooOutcome) -> CoverageVisual {
+        let screen = NSScreen.screens.first { $0.pawDisplayID == id } ?? NSScreen.main ?? NSScreen.screens[0]
+        return VisualWindowController(screen: screen, onShoo: onShoo)
+    }
+
+    // MARK: - Rendering
+
+    /// Single source of truth: reconcile the UI with the engine's state — the
+    /// status item, and Coverage (one cat per display during a Rest, none else).
     private func render() {
+        renderStatus()
+        coverage?.update(covering: isResting)
+    }
+
+    private var isResting: Bool {
+        if case .resting = engine.state { return true }
+        return false
+    }
+
+    private func renderStatus() {
         switch engine.state {
         case .idle:
             statusItem.button?.title = "🐾"
             startItem.isEnabled = true
             stopItem.isEnabled = false
-            dismissVisual()
         case .working:
             statusItem.button?.title = format(engine.remaining())
             startItem.isEnabled = false
             stopItem.isEnabled = true
-            dismissVisual()
         case .resting:
             statusItem.button?.title = "😺 " + format(engine.restRemaining())
             startItem.isEnabled = false
             stopItem.isEnabled = true
-            presentVisual()
         }
-    }
-
-    private func presentVisual() {
-        guard visual == nil else { return }
-        visual = VisualWindowController { [weak self] in self?.shoo() ?? .snappedBack }
-        visual?.show()
-    }
-
-    private func dismissVisual() {
-        visual?.close()
-        visual = nil
     }
 
     private func format(_ seconds: TimeInterval) -> String {
         let total = Int(seconds.rounded(.up))
         return String(format: "%02d:%02d", total / 60, total % 60)
+    }
+}
+
+/// The connected displays, read from AppKit. The Orchestrator depends only on
+/// the `DisplayProvider` protocol, never on this type.
+@MainActor
+final class ScreenDisplayProvider: DisplayProvider {
+    var displays: [DisplayID] { NSScreen.screens.compactMap(\.pawDisplayID) }
+}
+
+extension NSScreen {
+    /// The stable Core Graphics display identifier for this screen, if available.
+    var pawDisplayID: DisplayID? {
+        guard let number = deviceDescription[NSDeviceDescriptionKey("NSScreenNumber")] as? NSNumber else { return nil }
+        return DisplayID(number.uint32Value)
     }
 }

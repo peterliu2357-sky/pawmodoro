@@ -15,7 +15,7 @@ import PawmodoroKit
 /// so the user can keep typing into apps in the uncovered area. No Accessibility
 /// or Input-Monitoring permission is ever requested. Verified by manual QA.
 @MainActor
-final class VisualWindowController {
+final class VisualWindowController: CoverageVisual {
     private let dimWindow: NSWindow
     private let catWindow: NSWindow
     private let cat: CatView
@@ -28,13 +28,12 @@ final class VisualWindowController {
 
     private var springTimer: Timer?
 
-    init(onShoo: @escaping () -> ShooOutcome) {
+    init(screen: NSScreen, onShoo: @escaping () -> ShooOutcome) {
         self.onShoo = onShoo
 
         // visibleFrame (not frame) so nothing covers the menu bar — the status
         // item stays visible and clickable during a Rest.
-        let screen = NSScreen.main ?? NSScreen.screens.first
-        screenFrame = screen?.visibleFrame ?? NSRect(x: 0, y: 0, width: 800, height: 600)
+        screenFrame = screen.visibleFrame
 
         // Dim: the whole display, dimmed, click-through (purely visual).
         dimWindow = NSWindow(contentRect: screenFrame, styleMask: .borderless, backing: .buffered, defer: false)
