@@ -106,6 +106,28 @@ final class TestClock: Clock, @unchecked Sendable {
         #expect(engine.state == .working(endsAt: clock.now + 25 * 60))
     }
 
+    @Test func configuredDurationIsUsedByTheNextWorkSession() {
+        let clock = TestClock()
+        var engine = SessionEngine(workDuration: 25 * 60, clock: clock)
+
+        engine.configure(workDuration: 30 * 60, restDuration: 5 * 60)
+        engine.start()
+
+        #expect(engine.remaining() == 30 * 60)
+    }
+
+    @Test func configuringDoesNotDisturbACurrentlyRunningWorkSession() {
+        let clock = TestClock()
+        var engine = SessionEngine(workDuration: 25 * 60, clock: clock)
+        engine.start()
+        let originalEnd = clock.now + 25 * 60
+
+        engine.configure(workDuration: 30 * 60, restDuration: 5 * 60)
+
+        #expect(engine.state == .working(endsAt: originalEnd))
+        #expect(engine.remaining() == 25 * 60)
+    }
+
     @Test func stopReturnsToIdleFromWork() {
         let clock = TestClock()
         var engine = SessionEngine(workDuration: 25 * 60, clock: clock)

@@ -22,8 +22,8 @@ public enum ShooOutcome: Equatable, Sendable {
 /// Pure domain logic for the Work loop. Holds no AppKit dependency; time comes
 /// from an injected `Clock` so behavior is fully testable.
 public struct SessionEngine: Sendable {
-    public let workDuration: TimeInterval
-    public let restDuration: TimeInterval
+    public private(set) var workDuration: TimeInterval
+    public private(set) var restDuration: TimeInterval
     private let clock: Clock
     public private(set) var state: SessionState
 
@@ -32,6 +32,14 @@ public struct SessionEngine: Sendable {
         self.restDuration = restDuration
         self.clock = clock
         self.state = .idle
+    }
+
+    /// Updates the configured durations. The change applies to the next Work
+    /// Session and Rest; any session already running keeps its original
+    /// end-time, since that instant is baked into the current state.
+    public mutating func configure(workDuration: TimeInterval, restDuration: TimeInterval) {
+        self.workDuration = workDuration
+        self.restDuration = restDuration
     }
 
     /// Begins a fresh Work Session of the full configured duration.
