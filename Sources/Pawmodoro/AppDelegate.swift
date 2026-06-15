@@ -59,11 +59,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         render()
     }
 
-    /// Dismisses the Visual (Shoo placeholder) and lets the loop continue into a
-    /// fresh Work Session.
-    private func shoo() {
-        engine.dismiss()
+    /// The user flicked the Visual off an edge. The engine accepts the Shoo only
+    /// if the Rest has completed; otherwise it snaps back and the Rest continues.
+    @discardableResult
+    private func shoo() -> ShooOutcome {
+        let outcome = engine.attemptShoo()
         render()
+        return outcome
     }
 
     /// Single source of truth: reconcile the UI with the engine's state.
@@ -80,7 +82,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             stopItem.isEnabled = true
             dismissVisual()
         case .resting:
-            statusItem.button?.title = "😺"
+            statusItem.button?.title = "😺 " + format(engine.restRemaining())
             startItem.isEnabled = false
             stopItem.isEnabled = true
             presentVisual()
@@ -89,7 +91,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     private func presentVisual() {
         guard visual == nil else { return }
-        visual = VisualWindowController { [weak self] in self?.shoo() }
+        visual = VisualWindowController { [weak self] in self?.shoo() ?? .snappedBack }
         visual?.show()
     }
 

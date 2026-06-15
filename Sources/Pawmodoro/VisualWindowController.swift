@@ -1,18 +1,27 @@
 import AppKit
+import PawmodoroKit
 
-/// A borderless, full-screen placeholder Visual that pounces onto the main
-/// display when a Rest begins. Slice 1 is intentionally minimal: a big cat
-/// covering the screen that dismisses on click. Drag/throw physics, Snap-back,
-/// coverage shaping, click-through, and multi-display all arrive in later slices.
+/// A borderless, full-screen Visual that pounces onto the main display when a
+/// Rest begins. The cat can be grabbed and thrown; flicking it off a screen edge
+/// asks the engine to end the Rest. The engine's verdict drives the animation:
+/// `.accepted` flies the cat off, `.snappedBack` springs it home.
+///
+/// Coverage shaping (~80%), click-through outside the cat, and multi-display all
+/// arrive in later slices. This layer is verified by manual QA.
 @MainActor
 final class VisualWindowController {
     private let window: NSWindow
-    private let onShoo: () -> Void
+    private let cat: CatView
 
-    init(onShoo: @escaping () -> Void) {
+    /// Asks the engine to end the Rest; returns its verdict.
+    private let onShoo: () -> ShooOutcome
+
+    init(onShoo: @escaping () -> ShooOutcome) {
         self.onShoo = onShoo
 
-        let frame = (NSScreen.main ?? NSScreen.screens.first)?.frame ?? .zero
+        // visibleFrame (not frame) so the cat never covers the menu bar — the
+        // status item stays visible and clickable during a Rest.
+        let frame = (NSScreen.main ?? NSScreen.screens.first)?.visibleFrame ?? NSRect(x: 0, y: 0, width: 800, height: 600)
         window = NSWindow(
             contentRect: frame,
             styleMask: .borderless,
@@ -23,14 +32,19 @@ final class VisualWindowController {
         window.backgroundColor = NSColor.black.withAlphaComponent(0.25)
         window.level = .screenSaver
         window.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary]
-        window.ignoresMouseEvents = false
 
-        let view = ClickView()
-        view.onClick = onShoo
-        window.contentView = view
+        let content = NSView(frame: NSRect(origin: .zero, size: frame.size))
+        let side = min(frame.width, frame.height) * 0.45
+        cat = CatView(frame: NSRect(x: 0, y: 0, width: side, height: side))
+        content.addSubview(cat)
+        window.contentView = content
+
+        cat.onThrow = { [weak self] velocity in self?.handleThrow(velocity) }
+        centerCat()
     }
 
     func show() {
+        centerCat()
         window.makeKeyAndOrderFront(nil)
         NSApp.activate(ignoringOtherApps: true)
     }
@@ -38,29 +52,43 @@ final class VisualWindowController {
     func close() {
         window.orderOut(nil)
     }
-}
 
-/// Fills its bounds with a large placeholder cat and reports clicks.
-private final class ClickView: NSView {
-    var onClick: (() -> Void)?
+    private var home: CGPoint {
+        guard let content = window.contentView else { return .zero }
+        return CGPoint(x: content.bounds.midX, y: content.bounds.midY)
+    }
 
-    override func mouseDown(with event: NSEvent) { onClick?() }
+    private func centerCat() {
+        cat.setFrameOrigin(CGPoint(x: home.x - cat.frame.width / 2, y: home.y - cat.frame.height / 2))
+    }
 
-    override func draw(_ dirtyRect: NSRect) {
-        let cat = "🐱" as NSString
-        let attrs: [NSAttributedString.Key: Any] = [
-            .font: NSFont.systemFont(ofSize: min(bounds.width, bounds.height) * 0.5)
-        ]
-        let size = cat.size(withAttributes: attrs)
-        let origin = NSPoint(x: bounds.midX - size.width / 2, y: bounds.midY - size.height / 2)
-        cat.draw(at: origin, withAttributes: attrs)
+    /// The cat was released. Decide whether the throw carries it off a screen
+    /// edge; if so ask the engine, then animate based on the verdict.
+    private func handleThrow(_ velocity: CGVector) {
+        guard let content = window.contentView else { return }
+        let bounds = content.bounds
 
-        let hint = "Click the cat to Shoo it away" as NSString
-        let hintAttrs: [NSAttributedString.Key: Any] = [
-            .font: NSFont.systemFont(ofSize: 24, weight: .medium),
-            .foregroundColor: NSColor.white.withAlphaComponent(0.85)
-        ]
-        let hintSize = hint.size(withAttributes: hintAttrs)
-        hint.draw(at: NSPoint(x: bounds.midX - hintSize.width / 2, y: origin.y - 48), withAttributes: hintAttrs)
+        // Project where the cat's centre lands a short moment after release.
+        let projectionTime: CGFloat = 0.35
+        let center = CGPoint(x: cat.frame.midX, y: cat.frame.midY)
+        let landing = CGPoint(x: center.x + velocity.dx * projectionTime,
+                              y: center.y + velocity.dy * projectionTime)
+
+        let leavesEdge = landing.x < 0 || landing.x > bounds.width
+            || landing.y < 0 || landing.y > bounds.height
+
+        guard leavesEdge else {
+            cat.springHome(to: home)   // not a real Shoo attempt
+            return
+        }
+
+        switch onShoo() {
+        case .accepted:
+            cat.flyOff(direction: velocity, within: bounds) { [weak self] in
+                MainActor.assumeIsolated { self?.close() }
+            }
+        case .snappedBack:
+            cat.springHome(to: home)
+        }
     }
 }
