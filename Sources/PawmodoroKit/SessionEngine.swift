@@ -8,6 +8,9 @@ import Foundation
 public enum SessionState: Equatable, Sendable {
     case idle
     case working(endsAt: Date)
+    /// A Work Session frozen by the user, holding the seconds that remained when
+    /// it was paused. The countdown does not advance and never becomes a Rest.
+    case paused(remaining: TimeInterval)
     case resting(endsAt: Date)
 }
 
@@ -57,6 +60,21 @@ public struct SessionEngine: Sendable {
         }
     }
 
+    /// Freezes a running Work Session, capturing the seconds that remain so a
+    /// later `resume` can continue from exactly here. A no-op unless working —
+    /// a Rest is the enforced part of the loop and cannot be paused.
+    public mutating func pause() {
+        guard case .working = state else { return }
+        state = .paused(remaining: remaining())
+    }
+
+    /// Continues a paused Work Session from exactly where it left off, anchoring
+    /// a fresh end-time to the current clock. A no-op unless paused.
+    public mutating func resume() {
+        guard case let .paused(remaining) = state else { return }
+        state = .working(endsAt: clock.now + remaining)
+    }
+
     /// Ends the loop entirely and returns to Idle, from any state.
     public mutating func stop() {
         state = .idle
@@ -88,8 +106,11 @@ public struct SessionEngine: Sendable {
     /// (target end-time vs. now) rather than accumulated ticks. Zero when not
     /// in a Work Session.
     public func remaining() -> TimeInterval {
-        guard case let .working(endsAt) = state else { return 0 }
-        return max(0, endsAt.timeIntervalSince(clock.now))
+        switch state {
+        case let .working(endsAt): return max(0, endsAt.timeIntervalSince(clock.now))
+        case let .paused(remaining): return remaining
+        default: return 0
+        }
     }
 
     /// Seconds left in the current Rest, derived from the wall-clock. Zero when

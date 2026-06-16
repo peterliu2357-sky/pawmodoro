@@ -163,6 +163,61 @@ final class TestClock: Clock, @unchecked Sendable {
         #expect(engine.state == .idle)
     }
 
+    @Test func pauseFreezesTheRemainingTimeAcrossClockAdvancement() {
+        let clock = TestClock()
+        var engine = SessionEngine(workDuration: 25 * 60, clock: clock)
+        engine.start()
+        clock.advance(by: 10 * 60)          // 15 minutes remaining
+
+        engine.pause()
+        clock.advance(by: 60 * 60)          // a long time passes while paused
+
+        #expect(engine.remaining() == 15 * 60)
+    }
+
+    @Test func resumeContinuesFromTheExactRemainingTime() {
+        let clock = TestClock()
+        var engine = SessionEngine(workDuration: 25 * 60, clock: clock)
+        engine.start()
+        clock.advance(by: 10 * 60)          // 15 minutes remaining
+        engine.pause()
+        clock.advance(by: 60 * 60)          // time passes while paused
+
+        engine.resume()
+
+        #expect(engine.state == .working(endsAt: clock.now + 15 * 60))
+        #expect(engine.remaining() == 15 * 60)
+
+        clock.advance(by: 5 * 60)           // and it counts down again
+        #expect(engine.remaining() == 10 * 60)
+    }
+
+    @Test func pausedWorkSessionNeverTransitionsToRestOnItsOwn() {
+        let clock = TestClock()
+        var engine = SessionEngine(workDuration: 25 * 60, restDuration: 5 * 60, clock: clock)
+        engine.start()
+        clock.advance(by: 10 * 60)
+        engine.pause()
+
+        clock.advance(by: 60 * 60)          // well past the original work end
+        engine.poll()
+
+        #expect(engine.state == .paused(remaining: 15 * 60))
+    }
+
+    @Test func pauseDuringARestIsIgnored() {
+        let clock = TestClock()
+        var engine = SessionEngine(workDuration: 25 * 60, restDuration: 5 * 60, clock: clock)
+        engine.start()
+        clock.advance(by: 25 * 60)
+        engine.poll()                       // now resting
+        let restEnd = clock.now + 5 * 60
+
+        engine.pause()
+
+        #expect(engine.state == .resting(endsAt: restEnd))
+    }
+
     @Test func stopReturnsToIdleFromWork() {
         let clock = TestClock()
         var engine = SessionEngine(workDuration: 25 * 60, clock: clock)

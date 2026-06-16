@@ -23,6 +23,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     private let startItem = NSMenuItem(title: "Start", action: #selector(start), keyEquivalent: "")
     private let stopItem = NSMenuItem(title: "Stop", action: #selector(stop), keyEquivalent: "")
+    private let pauseItem = NSMenuItem(title: "Pause", action: #selector(pauseOrResume), keyEquivalent: "")
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         coverage = CoverageOrchestrator(
@@ -63,8 +64,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         let menu = NSMenu()
         startItem.target = self
         stopItem.target = self
+        pauseItem.target = self
         menu.addItem(startItem)
         menu.addItem(stopItem)
+        menu.addItem(pauseItem)
         menu.addItem(.separator())
         let settings = NSMenuItem(title: "Settings…", action: #selector(openSettings), keyEquivalent: ",")
         settings.target = self
@@ -92,6 +95,17 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     @objc private func stop() {
         engine.stop()
+        render()
+    }
+
+    /// One menu item serves both directions: it pauses a running Work Session
+    /// and resumes a paused one. The engine no-ops in any other state.
+    @objc private func pauseOrResume() {
+        switch engine.state {
+        case .working: engine.pause()
+        case .paused: engine.resume()
+        default: break
+        }
         render()
     }
 
@@ -177,19 +191,31 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     private func renderStatus() {
+        // Pause/Resume is offered only around a Work Session — never during a
+        // Rest (the enforced part) or while idle.
         switch engine.state {
         case .idle:
             statusItem.button?.title = "🐾"
             startItem.isEnabled = true
             stopItem.isEnabled = false
+            pauseItem.isHidden = true
         case .working:
             statusItem.button?.title = format(engine.remaining())
             startItem.isEnabled = false
             stopItem.isEnabled = true
+            pauseItem.isHidden = false
+            pauseItem.title = "Pause"
+        case .paused:
+            statusItem.button?.title = "⏸ " + format(engine.remaining())
+            startItem.isEnabled = false
+            stopItem.isEnabled = true
+            pauseItem.isHidden = false
+            pauseItem.title = "Resume"
         case .resting:
             statusItem.button?.title = "😺 " + format(engine.restRemaining())
             startItem.isEnabled = false
             stopItem.isEnabled = true
+            pauseItem.isHidden = true
         }
     }
 
