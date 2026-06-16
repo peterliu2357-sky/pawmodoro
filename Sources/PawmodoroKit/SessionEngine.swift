@@ -75,6 +75,15 @@ public struct SessionEngine: Sendable {
         return .accepted
     }
 
+    /// The escape hatch: force-ends an active Rest immediately, ignoring the
+    /// Snap-back lock and any remaining Rest time, and begins a fresh full-length
+    /// Work Session. A no-op while working or idle — there is no Rest to escape,
+    /// and we must not reset a running Work Session out from under the user.
+    public mutating func emergencyShoo() {
+        guard case .resting = state else { return }
+        start()
+    }
+
     /// Seconds left in the current Work Session, derived from the wall-clock
     /// (target end-time vs. now) rather than accumulated ticks. Zero when not
     /// in a Work Session.

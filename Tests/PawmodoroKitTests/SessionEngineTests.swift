@@ -128,6 +128,41 @@ final class TestClock: Clock, @unchecked Sendable {
         #expect(engine.remaining() == 25 * 60)
     }
 
+    @Test func emergencyShooEndsAnActiveRestImmediatelyIntoAFreshWorkSession() {
+        let clock = TestClock()
+        var engine = SessionEngine(workDuration: 25 * 60, restDuration: 5 * 60, clock: clock)
+        engine.start()
+        clock.advance(by: 25 * 60)
+        engine.poll()                       // now resting
+
+        clock.advance(by: 60)               // 4 minutes of Rest still to go
+        engine.emergencyShoo()
+
+        #expect(engine.state == .working(endsAt: clock.now + 25 * 60))
+        #expect(engine.remaining() == 25 * 60)
+    }
+
+    @Test func emergencyShooWhileWorkingLeavesTheWorkSessionUntouched() {
+        let clock = TestClock()
+        var engine = SessionEngine(workDuration: 25 * 60, clock: clock)
+        engine.start()
+        let originalEnd = clock.now + 25 * 60
+        clock.advance(by: 60)
+
+        engine.emergencyShoo()
+
+        #expect(engine.state == .working(endsAt: originalEnd))
+    }
+
+    @Test func emergencyShooWhileIdleDoesNothing() {
+        let clock = TestClock()
+        var engine = SessionEngine(workDuration: 25 * 60, clock: clock)
+
+        engine.emergencyShoo()
+
+        #expect(engine.state == .idle)
+    }
+
     @Test func stopReturnsToIdleFromWork() {
         let clock = TestClock()
         var engine = SessionEngine(workDuration: 25 * 60, clock: clock)

@@ -1,4 +1,5 @@
 import AppKit
+import Carbon.HIToolbox
 import PawmodoroKit
 import ServiceManagement
 import SwiftUI
@@ -18,6 +19,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     private let settingsStore = SettingsStore(persistence: UserDefaultsSettingsPersistence())
     private var settingsWindow: NSWindow?
+    private var emergencyHotKey: GlobalHotKey?
 
     private let startItem = NSMenuItem(title: "Start", action: #selector(start), keyEquivalent: "")
     private let stopItem = NSMenuItem(title: "Stop", action: #selector(stop), keyEquivalent: "")
@@ -48,6 +50,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         ) { [weak self] _ in
             MainActor.assumeIsolated { self?.coverage?.displaysChanged() }
         }
+
+        // The Emergency Shoo: a permission-free system-wide ⌃⌥⌘. that force-ends
+        // a Rest from any app, so the user is never truly trapped.
+        emergencyHotKey = GlobalHotKey(
+            keyCode: UInt32(kVK_ANSI_Period),
+            modifiers: UInt32(controlKey | optionKey | cmdKey)
+        ) { [weak self] in self?.emergencyShoo() }
     }
 
     private func buildMenu() {
@@ -60,6 +69,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         let settings = NSMenuItem(title: "Settings…", action: #selector(openSettings), keyEquivalent: ",")
         settings.target = self
         menu.addItem(settings)
+        // Deliberately low-key: a plain item near the bottom, showing its
+        // shortcut as a hint, not advertised as a primary control.
+        let emergency = NSMenuItem(title: "Emergency Shoo", action: #selector(emergencyShoo), keyEquivalent: ".")
+        emergency.keyEquivalentModifierMask = [.control, .option, .command]
+        emergency.target = self
+        menu.addItem(emergency)
         let quit = NSMenuItem(title: "Quit Pawmodoro", action: #selector(NSApplication.terminate(_:)), keyEquivalent: "q")
         menu.addItem(quit)
         statusItem.menu = menu
@@ -77,6 +92,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     @objc private func stop() {
         engine.stop()
+        render()
+    }
+
+    /// The escape hatch. Force-ends an active Rest; `render()` then sees the
+    /// engine is no longer resting and clears the cats on every display.
+    @objc private func emergencyShoo() {
+        engine.emergencyShoo()
         render()
     }
 
