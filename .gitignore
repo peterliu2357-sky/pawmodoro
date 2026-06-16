@@ -5,3 +5,6 @@ build/
 .swiftpm/
 DerivedData/
 *.xcuserstate
+
+# Packaging output (the assembled .app and .dmg are build artifacts)
+dist/

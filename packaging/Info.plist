@@ -1,0 +1,32 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<key>CFBundleName</key>
+	<string>Pawmodoro</string>
+	<key>CFBundleDisplayName</key>
+	<string>Pawmodoro</string>
+	<key>CFBundleIdentifier</key>
+	<string>com.pawmodoro.Pawmodoro</string>
+	<key>CFBundleExecutable</key>
+	<string>Pawmodoro</string>
+	<key>CFBundlePackageType</key>
+	<string>APPL</string>
+	<key>CFBundleShortVersionString</key>
+	<string>1.0.0</string>
+	<key>CFBundleVersion</key>
+	<string>1</string>
+	<key>CFBundleIconFile</key>
+	<string>AppIcon</string>
+	<key>LSMinimumSystemVersion</key>
+	<string>14.0</string>
+	<key>NSHighResolutionCapable</key>
+	<true/>
+	<!-- Menu-bar agent: no Dock icon, no main window. Matches the app's
+	     NSApplication.setActivationPolicy(.accessory) at launch. -->
+	<key>LSUIElement</key>
+	<true/>
+	<key>NSHumanReadableCopyright</key>
+	<string>Pawmodoro</string>
+</dict>
+</plist>

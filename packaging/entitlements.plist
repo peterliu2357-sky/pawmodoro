@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<!-- Pawmodoro requests no special permissions (ADR-0001): no Accessibility,
+	     no Input Monitoring, no network, no sandbox. This entitlements file is
+	     intentionally minimal — it exists only so the hardened runtime required
+	     for notarization has a file to reference. Add entitlements here only if
+	     a future feature genuinely needs one. -->
+</dict>
+</plist>
