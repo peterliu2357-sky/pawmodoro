@@ -28,6 +28,12 @@ final class VisualWindowController: CoverageVisual {
 
     private var springTimer: Timer?
 
+    /// Both Visual windows sit above the screen saver level so they can ride over
+    /// another app's true-fullscreen Space (ADR-0002). The cat sits one step
+    /// above the dim so the grabbable Visual is always in front of the backdrop.
+    private static let dimLevel = NSWindow.Level(rawValue: NSWindow.Level.screenSaver.rawValue + 1)
+    private static let catLevel = NSWindow.Level(rawValue: NSWindow.Level.screenSaver.rawValue + 2)
+
     init(screen: NSScreen, onShoo: @escaping () -> ShooOutcome) {
         self.onShoo = onShoo
 
@@ -40,7 +46,10 @@ final class VisualWindowController: CoverageVisual {
         dimWindow.isOpaque = false
         dimWindow.backgroundColor = NSColor.black.withAlphaComponent(0.25)
         dimWindow.hasShadow = false
-        dimWindow.level = .screenSaver
+        // Above the screen saver, with all-Spaces + fullscreen-auxiliary
+        // behavior, so the dim can reach over another app's true-fullscreen
+        // Space (ADR-0002 — best-effort, degrades gracefully if the OS blocks it).
+        dimWindow.level = Self.dimLevel
         dimWindow.ignoresMouseEvents = true   // clicks pass through to apps behind
         dimWindow.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary]
 
@@ -52,7 +61,7 @@ final class VisualWindowController: CoverageVisual {
         catWindow.isOpaque = false
         catWindow.backgroundColor = .clear
         catWindow.hasShadow = false
-        catWindow.level = NSWindow.Level(rawValue: NSWindow.Level.screenSaver.rawValue + 1)
+        catWindow.level = Self.catLevel       // one step above the dim
         catWindow.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary]
         catWindow.contentView = cat
 

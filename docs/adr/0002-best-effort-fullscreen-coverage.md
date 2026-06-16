@@ -25,3 +25,17 @@ and everything else keeps working.
 - This decision is tied to the choice of native Swift/AppKit, which is the only
   toolkit giving the precise window-level and collection-behavior control
   required.
+
+## Verification
+
+Both Visual windows are configured above the screen saver level with
+`canJoinAllSpaces` + `fullScreenAuxiliary` (the dim one step below the cat).
+
+- **macOS 26.3.1 (2026-06):** verified by manual QA — during a Rest, the dim and
+  cat appear over an app running in true fullscreen. No gap observed on this
+  version.
+
+The graceful-degradation guarantee does not rest on this result: the loop is
+pure wall-clock logic that never inspects whether a window appeared, and the
+Emergency Shoo ends a Rest without any Visual, so a future OS that tightens this
+path leaves the user able to escape and the loop correct.
