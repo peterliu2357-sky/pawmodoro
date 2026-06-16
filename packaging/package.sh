@@ -124,3 +124,4 @@ fi
 step "Done"
 info "App:  $APP_BUNDLE"
 [ -n "$DMG" ] && info "DMG:  $DMG"
+exit 0
