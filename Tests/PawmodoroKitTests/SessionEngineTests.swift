@@ -218,6 +218,57 @@ final class TestClock: Clock, @unchecked Sendable {
         #expect(engine.state == .resting(endsAt: restEnd))
     }
 
+    @Test func startRestFromIdleBeginsATimedRestOfTheConfiguredLength() {
+        let clock = TestClock()
+        var engine = SessionEngine(workDuration: 25 * 60, restDuration: 5 * 60, clock: clock)
+
+        engine.startRest()
+
+        #expect(engine.state == .resting(endsAt: clock.now + 5 * 60))
+        #expect(engine.restRemaining() == 5 * 60)
+    }
+
+    @Test func startRestDuringAWorkSessionCutsItShortIntoARest() {
+        let clock = TestClock()
+        var engine = SessionEngine(workDuration: 25 * 60, restDuration: 5 * 60, clock: clock)
+        engine.start()
+        clock.advance(by: 10 * 60)          // 15 minutes of work still to go
+
+        engine.startRest()
+
+        #expect(engine.state == .resting(endsAt: clock.now + 5 * 60))
+        #expect(engine.restRemaining() == 5 * 60)
+    }
+
+    @Test func startRestWhileAlreadyRestingDoesNotRestartTheRest() {
+        let clock = TestClock()
+        var engine = SessionEngine(workDuration: 25 * 60, restDuration: 5 * 60, clock: clock)
+        engine.start()
+        clock.advance(by: 25 * 60)
+        engine.poll()                       // now resting, ends 5 min from here
+        let restEnd = clock.now + 5 * 60
+
+        clock.advance(by: 2 * 60)           // 3 minutes of Rest still to go
+        engine.startRest()
+
+        // The original Rest keeps its end-time; it isn't extended back to a full 5.
+        #expect(engine.state == .resting(endsAt: restEnd))
+        #expect(engine.restRemaining() == 3 * 60)
+    }
+
+    @Test func startRestFromAPausedWorkSessionBeginsARest() {
+        let clock = TestClock()
+        var engine = SessionEngine(workDuration: 25 * 60, restDuration: 5 * 60, clock: clock)
+        engine.start()
+        clock.advance(by: 10 * 60)
+        engine.pause()                      // frozen, 15 minutes remaining
+
+        engine.startRest()
+
+        #expect(engine.state == .resting(endsAt: clock.now + 5 * 60))
+        #expect(engine.restRemaining() == 5 * 60)
+    }
+
     @Test func stopReturnsToIdleFromWork() {
         let clock = TestClock()
         var engine = SessionEngine(workDuration: 25 * 60, clock: clock)

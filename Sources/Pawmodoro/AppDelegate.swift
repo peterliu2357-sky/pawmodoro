@@ -24,6 +24,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private let startItem = NSMenuItem(title: "Start", action: #selector(start), keyEquivalent: "")
     private let stopItem = NSMenuItem(title: "Stop", action: #selector(stop), keyEquivalent: "")
     private let pauseItem = NSMenuItem(title: "Pause", action: #selector(pauseOrResume), keyEquivalent: "")
+    private let restNowItem = NSMenuItem(title: "Take a Rest Now", action: #selector(takeRestNow), keyEquivalent: "")
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         coverage = CoverageOrchestrator(
@@ -65,9 +66,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         startItem.target = self
         stopItem.target = self
         pauseItem.target = self
+        restNowItem.target = self
         menu.addItem(startItem)
         menu.addItem(stopItem)
         menu.addItem(pauseItem)
+        menu.addItem(restNowItem)
         menu.addItem(.separator())
         let settings = NSMenuItem(title: "Settings…", action: #selector(openSettings), keyEquivalent: ",")
         settings.target = self
@@ -106,6 +109,17 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         case .paused: engine.resume()
         default: break
         }
+        render()
+    }
+
+    /// Begins a Rest right now from any non-resting state — the Visual pounces
+    /// and the configured Rest runs, just as if a Work Session had elapsed.
+    /// `render()` then brings up Coverage on every display.
+    @objc private func takeRestNow() {
+        // Pick up the latest configured Rest length for this on-demand Rest.
+        let settings = settingsStore.settings
+        engine.configure(workDuration: settings.workDuration, restDuration: settings.restDuration)
+        engine.startRest()
         render()
     }
 
@@ -193,30 +207,56 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private func renderStatus() {
         // Pause/Resume is offered only around a Work Session — never during a
         // Rest (the enforced part) or while idle.
+        // "Take a Rest Now" is offered everywhere except during a Rest, where
+        // the engine no-ops (there's already a Rest running).
         switch engine.state {
         case .idle:
-            statusItem.button?.title = "🐾"
+            // A template SF Symbol auto-adapts to the menu bar's light/dark
+            // appearance, so the icon is always visible — a color emoji (🐾)
+            // renders dark and disappears against a dark-tinted menu bar.
+            setStatusIcon("pawprint.fill", fallbackTitle: "🐾")
             startItem.isEnabled = true
             stopItem.isEnabled = false
             pauseItem.isHidden = true
+            restNowItem.isEnabled = true
         case .working:
-            statusItem.button?.title = format(engine.remaining())
+            setStatusTitle(format(engine.remaining()))
             startItem.isEnabled = false
             stopItem.isEnabled = true
             pauseItem.isHidden = false
             pauseItem.title = "Pause"
+            restNowItem.isEnabled = true
         case .paused:
-            statusItem.button?.title = "⏸ " + format(engine.remaining())
+            setStatusTitle("⏸ " + format(engine.remaining()))
             startItem.isEnabled = false
             stopItem.isEnabled = true
             pauseItem.isHidden = false
             pauseItem.title = "Resume"
+            restNowItem.isEnabled = true
         case .resting:
-            statusItem.button?.title = "😺 " + format(engine.restRemaining())
+            setStatusTitle("😺 " + format(engine.restRemaining()))
             startItem.isEnabled = false
             stopItem.isEnabled = true
             pauseItem.isHidden = true
+            restNowItem.isEnabled = false
         }
+    }
+
+    /// Shows a template-rendered SF Symbol in the status item (clearing any
+    /// countdown text). Falls back to a title if the symbol is unavailable.
+    private func setStatusIcon(_ symbolName: String, fallbackTitle: String) {
+        guard let button = statusItem.button else { return }
+        let image = NSImage(systemSymbolName: symbolName, accessibilityDescription: "Pawmodoro")
+        image?.isTemplate = true
+        button.image = image
+        button.title = image == nil ? fallbackTitle : ""
+    }
+
+    /// Shows text in the status item (clearing any icon).
+    private func setStatusTitle(_ title: String) {
+        guard let button = statusItem.button else { return }
+        button.image = nil
+        button.title = title
     }
 
     private func format(_ seconds: TimeInterval) -> String {

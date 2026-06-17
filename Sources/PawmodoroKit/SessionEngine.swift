@@ -50,6 +50,20 @@ public struct SessionEngine: Sendable {
         state = .working(endsAt: clock.now + workDuration)
     }
 
+    /// Begins a timed Rest of the full configured length right now — the same
+    /// transition `poll` makes when a Work Session elapses, but on demand. A
+    /// no-op while already resting, so it never restarts (extends) a Rest the
+    /// user is already serving out from under them.
+    public mutating func startRest() {
+        guard !isResting else { return }
+        state = .resting(endsAt: clock.now + restDuration)
+    }
+
+    private var isResting: Bool {
+        if case .resting = state { return true }
+        return false
+    }
+
     /// Advances the state machine to the current wall-clock time. When a Work
     /// Session's timer has elapsed, the Visual pounces and a Rest begins. Call
     /// this periodically from the presentation layer.
