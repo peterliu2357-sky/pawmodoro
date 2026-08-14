@@ -196,7 +196,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     /// status item, and Coverage (one cat per display during a Rest, none else).
     private func render() {
         renderStatus()
-        coverage?.update(covering: isResting)
+        // restCompleted flips the cats from sleepy to awake at 00:00; the 0.5s
+        // tick cadence bounds how late the wake-up can be.
+        coverage?.update(covering: isResting, restCompleted: engine.restCompleted())
     }
 
     private var isResting: Bool {

@@ -8,10 +8,16 @@ import QuartzCore
 /// *its window* to follow the pointer, measures throw velocity, and reports a
 /// release via `onThrow`; spring-home and fly-off are driven by the controller.
 ///
-/// Two animations run here, both as layer-free redraws driven by a timer:
-///   • an **idle loop** — a gentle breathing scale and a few floating "z"s;
+/// Dozy has two looks: **sleepy** while the Rest runs (closed eyes, drifting
+/// "z"s) and **awake** once the Rest's timer completes (big glossy eyes, perked
+/// ears, lifted tail, twinkling sparkles) — the visual cue that a Shoo would now
+/// be accepted. Three animations run here, all as layer-free redraws driven by
+/// a timer:
+///   • an **idle loop** — a gentle breathing scale, plus floating "z"s while
+///     sleepy or twinkling sparkles once awake;
 ///   • a **Pounce entrance** — a springy scale-in with squash-and-stretch, so
-///     the cat lands when a Rest begins instead of just appearing.
+///     the cat lands when a Rest begins instead of just appearing;
+///   • a **wake-up pop** — a quick eye-opening hop when the Rest completes.
 @MainActor
 final class CatView: NSView {
     /// Called on mouse-down so the controller can interrupt any running spring.
@@ -30,6 +36,11 @@ final class CatView: NSView {
     private var lastTick: TimeInterval = 0
     private var pounceStart: TimeInterval?       // CACurrentMediaTime when the pounce began
     private static let pounceDuration: TimeInterval = 0.5
+
+    // Awake-look state (the Rest's timer has completed).
+    private var isAwake = false
+    private var wakeStart: TimeInterval?         // CACurrentMediaTime when the wake-up began
+    private static let wakeDuration: TimeInterval = 0.35
 
     /// The cat is authored in a 240×240 top-down space (matching the design), so
     /// the view draws flipped to use those coordinates directly.
@@ -64,6 +75,17 @@ final class CatView: NSView {
         animationTimer?.invalidate()
         animationTimer = nil
         pounceStart = nil
+        wakeStart = nil
+    }
+
+    /// Switches between the sleepy Rest look and the awake "Shoo me" look.
+    /// Waking while on screen plays the wake-up pop; when seeded before `appear`
+    /// (a display hotplugged after 00:00) the cat is simply drawn awake.
+    func setRestCompleted(_ restCompleted: Bool) {
+        guard restCompleted != isAwake else { return }
+        isAwake = restCompleted
+        wakeStart = (restCompleted && animationTimer != nil) ? CACurrentMediaTime() : nil
+        needsDisplay = true
     }
 
     private func tick() {
@@ -97,10 +119,23 @@ final class CatView: NSView {
         t.translateX(by: -pivot.x, yBy: -pivot.y)
         t.concat()
 
-        drawCat(alpha: alpha)
-        drawZs(now: now, alpha: alpha)
+        let wake = wakeProgress(now: now)
+        drawCat(alpha: alpha, eyeOpen: Self.easeOutBack(wake))
+        if isAwake {
+            drawSparkles(alpha: alpha, reveal: wake)
+        } else {
+            drawZs(now: now, alpha: alpha)
+        }
 
         ctx.restoreGraphicsState()
+    }
+
+    /// 0 while sleepy, ramping to 1 over the wake-up pop once the Rest
+    /// completes (already 1 when the cat was seeded awake before appearing).
+    private func wakeProgress(now: TimeInterval) -> CGFloat {
+        guard isAwake else { return 0 }
+        guard let start = wakeStart else { return 1 }
+        return CGFloat(min(1, max(0, (now - start) / Self.wakeDuration)))
     }
 
     /// Combines the breathing idle and the pounce entrance into per-axis scale
@@ -122,7 +157,16 @@ final class CatView: NSView {
             popY = pop * (1 + 0.45 * stretch)
             alpha = min(1, p * 2)
         }
-        return (popX * breathX, popY * breathY, alpha)
+
+        // Wake-up pop: a small hop (tall-thin then settle) as the eyes open.
+        var wakeX: CGFloat = 1, wakeY: CGFloat = 1
+        if let start = wakeStart {
+            let p = CGFloat(min(1, max(0, (now - start) / Self.wakeDuration)))
+            let hop = sin(p * .pi)
+            wakeX = 1 - 0.06 * hop
+            wakeY = 1 + 0.10 * hop
+        }
+        return (popX * breathX * wakeX, popY * breathY * wakeY, alpha)
     }
 
     private static func easeOutBack(_ p: CGFloat) -> CGFloat {
@@ -133,25 +177,36 @@ final class CatView: NSView {
     }
 
     /// Draws Dozy in design coordinates. The graphics context already carries the
-    /// design→view and animation transforms.
-    private func drawCat(alpha: CGFloat) {
+    /// design→view and animation transforms. `eyeOpen` scales the awake eyes
+    /// vertically (0 shut → 1 open, briefly overshooting) so they pop open over
+    /// the wake-up; it is ignored while sleepy.
+    private func drawCat(alpha: CGFloat, eyeOpen: CGFloat) {
         let body = NSColor(srgb: 0x43434F, alpha: alpha)
         let bodyDark = NSColor(srgb: 0x34343E, alpha: alpha)
         let rim = NSColor(srgb: 0x5A5A68, alpha: alpha)
         let earPink = NSColor(srgb: 0xFF9EB0, alpha: alpha)
         let eyeLine = NSColor(srgb: 0xCFD4E0, alpha: alpha)
-        let cheek = NSColor(srgb: 0xFF7E9C, alpha: 0.4 * alpha)
+        let cheek = NSColor(srgb: 0xFF7E9C, alpha: (isAwake ? 0.45 : 0.4) * alpha)
         let mouthLine = NSColor(srgb: 0x20202A, alpha: alpha)
         let whisker = NSColor(srgb: 0xCFD4E0, alpha: 0.6 * alpha)
 
         // Tail — a filled curl behind the body (a closed shape curls smoothly,
         // where a stroked multi-segment path kinks where its segments meet).
+        // Curled low while sleepy; lifted once awake.
         let tail = NSBezierPath()
-        tail.move(to: CGPoint(x: 54, y: 196))
-        tail.addQuad(to: CGPoint(x: 20, y: 140), control: CGPoint(x: 8, y: 190))
-        tail.addQuad(to: CGPoint(x: 46, y: 124), control: CGPoint(x: 26, y: 118))
-        tail.addQuad(to: CGPoint(x: 32, y: 150), control: CGPoint(x: 32, y: 130))
-        tail.addQuad(to: CGPoint(x: 66, y: 180), control: CGPoint(x: 32, y: 186))
+        if isAwake {
+            tail.move(to: CGPoint(x: 60, y: 192))
+            tail.addQuad(to: CGPoint(x: 22, y: 126), control: CGPoint(x: 14, y: 184))
+            tail.addQuad(to: CGPoint(x: 50, y: 108), control: CGPoint(x: 26, y: 100))
+            tail.addQuad(to: CGPoint(x: 36, y: 136), control: CGPoint(x: 32, y: 114))
+            tail.addQuad(to: CGPoint(x: 70, y: 178), control: CGPoint(x: 38, y: 174))
+        } else {
+            tail.move(to: CGPoint(x: 54, y: 196))
+            tail.addQuad(to: CGPoint(x: 20, y: 140), control: CGPoint(x: 8, y: 190))
+            tail.addQuad(to: CGPoint(x: 46, y: 124), control: CGPoint(x: 26, y: 118))
+            tail.addQuad(to: CGPoint(x: 32, y: 150), control: CGPoint(x: 32, y: 130))
+            tail.addQuad(to: CGPoint(x: 66, y: 180), control: CGPoint(x: 32, y: 186))
+        }
         tail.close()
         body.setFill(); tail.fill()
         rim.setStroke(); tail.lineWidth = 1.5; tail.stroke()
@@ -171,30 +226,51 @@ final class CatView: NSView {
         body.setFill(); head.fill()
         rim.setStroke(); head.lineWidth = 1.5; head.stroke()
 
-        // Ears (outer charcoal + rim, inner pink).
-        drawTriangle([(72, 66), (60, 16), (106, 50)], fill: body, stroke: rim)
-        drawTriangle([(168, 66), (180, 16), (134, 50)], fill: body, stroke: rim)
-        drawTriangle([(77, 58), (73, 32), (98, 50)], fill: earPink, stroke: nil)
-        drawTriangle([(163, 58), (167, 32), (142, 50)], fill: earPink, stroke: nil)
+        // Ears (outer charcoal + rim, inner pink) — relaxed while sleepy,
+        // perked taller once awake.
+        if isAwake {
+            drawTriangle([(72, 64), (56, 8), (106, 46)], fill: body, stroke: rim)
+            drawTriangle([(168, 64), (184, 8), (134, 46)], fill: body, stroke: rim)
+            drawTriangle([(76, 54), (68, 24), (98, 46)], fill: earPink, stroke: nil)
+            drawTriangle([(164, 54), (172, 24), (142, 46)], fill: earPink, stroke: nil)
+        } else {
+            drawTriangle([(72, 66), (60, 16), (106, 50)], fill: body, stroke: rim)
+            drawTriangle([(168, 66), (180, 16), (134, 50)], fill: body, stroke: rim)
+            drawTriangle([(77, 58), (73, 32), (98, 50)], fill: earPink, stroke: nil)
+            drawTriangle([(163, 58), (167, 32), (142, 50)], fill: earPink, stroke: nil)
+        }
 
-        // Sleepy, content eyes (downward arcs).
-        let eyes = NSBezierPath()
-        eyes.move(to: CGPoint(x: 82, y: 108)); eyes.addQuad(to: CGPoint(x: 110, y: 108), control: CGPoint(x: 96, y: 122))
-        eyes.move(to: CGPoint(x: 130, y: 108)); eyes.addQuad(to: CGPoint(x: 158, y: 108), control: CGPoint(x: 144, y: 122))
-        eyes.lineWidth = 5; eyes.lineCapStyle = .round
-        eyeLine.setStroke(); eyes.stroke()
+        // Eyes: big glossy open eyes once awake; sleepy, content downward arcs
+        // while the Rest runs.
+        if isAwake {
+            drawAwakeEyes(alpha: alpha, open: eyeOpen)
+        } else {
+            let eyes = NSBezierPath()
+            eyes.move(to: CGPoint(x: 82, y: 108)); eyes.addQuad(to: CGPoint(x: 110, y: 108), control: CGPoint(x: 96, y: 122))
+            eyes.move(to: CGPoint(x: 130, y: 108)); eyes.addQuad(to: CGPoint(x: 158, y: 108), control: CGPoint(x: 144, y: 122))
+            eyes.lineWidth = 5; eyes.lineCapStyle = .round
+            eyeLine.setStroke(); eyes.stroke()
+        }
 
-        // Cheeks.
-        for cx in [80.0, 160.0] {
-            let c = NSBezierPath(ovalIn: CGRect(x: cx - 12, y: 115, width: 24, height: 14))
+        // Cheeks — the bigger awake eyes push them outward and down a touch.
+        for cx in (isAwake ? [74.0, 166.0] : [80.0, 160.0]) {
+            let c = NSBezierPath(ovalIn: CGRect(x: cx - 12, y: isAwake ? 121 : 115, width: 24, height: 14))
             cheek.setFill(); c.fill()
         }
 
-        // Nose + mouth.
-        drawTriangle([(115, 124), (125, 124), (120, 130)], fill: earPink, stroke: nil)
+        // Nose + mouth — the awake face wears them slightly lower, with a
+        // rounder ω smile.
+        let noseY: CGFloat = isAwake ? 128 : 124
+        drawTriangle([(115, noseY), (125, noseY), (120, noseY + 6)], fill: earPink, stroke: nil)
         let mouth = NSBezierPath()
-        mouth.move(to: CGPoint(x: 120, y: 130)); mouth.addQuad(to: CGPoint(x: 108, y: 133), control: CGPoint(x: 114, y: 135))
-        mouth.move(to: CGPoint(x: 120, y: 130)); mouth.addQuad(to: CGPoint(x: 132, y: 133), control: CGPoint(x: 126, y: 135))
+        let m = CGPoint(x: 120, y: noseY + 6)
+        if isAwake {
+            mouth.move(to: m); mouth.addQuad(to: CGPoint(x: 108, y: 136), control: CGPoint(x: 114, y: 141))
+            mouth.move(to: m); mouth.addQuad(to: CGPoint(x: 132, y: 136), control: CGPoint(x: 126, y: 141))
+        } else {
+            mouth.move(to: m); mouth.addQuad(to: CGPoint(x: 108, y: 133), control: CGPoint(x: 114, y: 135))
+            mouth.move(to: m); mouth.addQuad(to: CGPoint(x: 132, y: 133), control: CGPoint(x: 126, y: 135))
+        }
         mouth.lineWidth = 3; mouth.lineCapStyle = .round
         mouthLine.setStroke(); mouth.stroke()
 
@@ -206,6 +282,71 @@ final class CatView: NSView {
         w.move(to: CGPoint(x: 168, y: 126)); w.line(to: CGPoint(x: 190, y: 130))
         w.lineWidth = 2.5; w.lineCapStyle = .round
         whisker.setStroke(); w.stroke()
+    }
+
+    /// The awake eyes — big, dark, and glossy: a large highlight up-right, a
+    /// small gleam down-left, and a pale-blue crescent shine along the bottom
+    /// (the "wet glassy" look). Both eyes are identical, 54 units apart, so one
+    /// loop draws them. `open` scales them vertically about their centre.
+    private func drawAwakeEyes(alpha: CGFloat, open: CGFloat) {
+        guard let ctx = NSGraphicsContext.current, open > 0.01 else { return }
+        let eyeDark = NSColor(srgb: 0x20202A, alpha: alpha)
+        let gleam = NSColor(srgb: 0xFFFFFF, alpha: alpha)
+        let gleamSoft = NSColor(srgb: 0xFFFFFF, alpha: 0.85 * alpha)
+        let shine = NSColor(srgb: 0x8FD0FF, alpha: 0.75 * alpha)
+        let centerY: CGFloat = 111
+
+        ctx.saveGraphicsState()
+        let t = NSAffineTransform()
+        t.translateX(by: 0, yBy: centerY)
+        t.scaleX(by: 1, yBy: open)
+        t.translateX(by: 0, yBy: -centerY)
+        t.concat()
+
+        for cx: CGFloat in [93, 147] {
+            let eye = NSBezierPath(ovalIn: CGRect(x: cx - 14.5, y: centerY - 16, width: 29, height: 32))
+            eyeDark.setFill(); eye.fill()
+
+            let highlight = NSBezierPath(ovalIn: CGRect(x: cx - 0.5, y: 97.5, width: 11, height: 13))
+            gleam.setFill(); highlight.fill()
+
+            let dot = NSBezierPath(ovalIn: CGRect(x: cx - 7.2, y: 112.8, width: 4.4, height: 4.4))
+            gleamSoft.setFill(); dot.fill()
+
+            let crescent = NSBezierPath()
+            crescent.move(to: CGPoint(x: cx - 8, y: 121))
+            crescent.addQuad(to: CGPoint(x: cx + 8, y: 121), control: CGPoint(x: cx, y: 126.5))
+            crescent.addQuad(to: CGPoint(x: cx - 8, y: 121), control: CGPoint(x: cx, y: 124.5))
+            crescent.close()
+            shine.setFill(); crescent.fill()
+        }
+        ctx.restoreGraphicsState()
+    }
+
+    /// Golden four-point sparkles beside the head once awake, each twinkling on
+    /// its own offset of a shared ~1.6s cycle. `reveal` fades them in with the
+    /// wake-up pop.
+    private func drawSparkles(alpha: CGFloat, reveal: CGFloat) {
+        guard reveal > 0 else { return }
+        let sparkles: [(x: CGFloat, y: CGFloat, size: CGFloat, delay: Double)] = [
+            (178, 60, 10, 0.0), (198, 86, 6, 0.5), (164, 38, 4, 1.0),
+        ]
+        for s in sparkles {
+            // 0→1→0 over the cycle, offset per sparkle so they alternate.
+            let v = CGFloat(0.5 - 0.5 * cos(2 * .pi * (idlePhase - s.delay) / 1.6))
+            let a = (0.35 + 0.65 * v) * reveal * alpha
+            let r = s.size * (0.8 + 0.35 * v)
+            let pinch = 0.2 * r    // how far the concave sides pull toward centre
+
+            let p = NSBezierPath()
+            p.move(to: CGPoint(x: s.x, y: s.y - r))
+            p.addQuad(to: CGPoint(x: s.x + r, y: s.y), control: CGPoint(x: s.x + pinch, y: s.y - pinch))
+            p.addQuad(to: CGPoint(x: s.x, y: s.y + r), control: CGPoint(x: s.x + pinch, y: s.y + pinch))
+            p.addQuad(to: CGPoint(x: s.x - r, y: s.y), control: CGPoint(x: s.x - pinch, y: s.y + pinch))
+            p.addQuad(to: CGPoint(x: s.x, y: s.y - r), control: CGPoint(x: s.x - pinch, y: s.y - pinch))
+            p.close()
+            NSColor(srgb: 0xFFD97A, alpha: a).setFill(); p.fill()
+        }
     }
 
     /// A few "z"s drifting up-right from beside the head, once the pounce settles.

@@ -127,6 +127,15 @@ public struct SessionEngine: Sendable {
         }
     }
 
+    /// True from the instant an active Rest's timer elapses until the Rest ends —
+    /// the stretch where the Visual is still up but a Shoo would be accepted. The
+    /// presentation uses this to switch the Visual from its sleepy look to its
+    /// awake one. False in every other state.
+    public func restCompleted() -> Bool {
+        guard case .resting = state else { return false }
+        return restRemaining() <= 0
+    }
+
     /// Seconds left in the current Rest, derived from the wall-clock. Zero when
     /// not resting, or once the Rest has completed (at which point a Shoo is
     /// accepted instead of triggering a Snap-back).

@@ -269,6 +269,30 @@ final class TestClock: Clock, @unchecked Sendable {
         #expect(engine.restRemaining() == 5 * 60)
     }
 
+    @Test func restCompletedFlipsTrueTheInstantTheRestTimerElapses() {
+        let clock = TestClock()
+        var engine = SessionEngine(workDuration: 25 * 60, restDuration: 5 * 60, clock: clock)
+        engine.start()
+        clock.advance(by: 25 * 60)
+        engine.poll()                       // now resting
+
+        #expect(engine.restCompleted() == false)   // the Rest just began
+
+        clock.advance(by: 5 * 60)           // Rest fully elapsed, Visual still up
+        #expect(engine.restCompleted() == true)
+    }
+
+    @Test func restCompletedIsFalseOutsideARest() {
+        let clock = TestClock()
+        var engine = SessionEngine(workDuration: 25 * 60, restDuration: 5 * 60, clock: clock)
+
+        #expect(engine.restCompleted() == false)   // idle
+
+        engine.start()
+        clock.advance(by: 26 * 60)          // work elapsed, but poll not yet called
+        #expect(engine.restCompleted() == false)   // still (over-)working
+    }
+
     @Test func stopReturnsToIdleFromWork() {
         let clock = TestClock()
         var engine = SessionEngine(workDuration: 25 * 60, clock: clock)

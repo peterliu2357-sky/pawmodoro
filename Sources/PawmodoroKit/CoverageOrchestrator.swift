@@ -20,6 +20,9 @@ public protocol DisplayProvider: AnyObject {
 public protocol CoverageVisual: AnyObject {
     func show()
     func close()
+    /// The Rest's timer has elapsed (or a fresh Rest reset it): switch the
+    /// Visual between its sleepy look and its awake, "Shoo me" look.
+    func setRestCompleted(_ restCompleted: Bool)
 }
 
 /// Coordinates Coverage across every connected display. During a Rest there is
@@ -34,6 +37,7 @@ public final class CoverageOrchestrator {
 
     private var visuals: [DisplayID: CoverageVisual] = [:]
     private var covering = false
+    private var restCompleted = false
 
     public init(
         displayProvider: DisplayProvider,
@@ -46,9 +50,13 @@ public final class CoverageOrchestrator {
     }
 
     /// Reconciles the on-screen Visuals to the engine's state and the current
-    /// display set. Call whenever the Rest begins/ends.
-    public func update(covering: Bool) {
+    /// display set. Call whenever the Rest begins/ends, and as the Rest's timer
+    /// runs down — `restCompleted` flips the Visuals to their awake look the
+    /// moment the timer elapses.
+    public func update(covering: Bool, restCompleted: Bool = false) {
         self.covering = covering
+        self.restCompleted = restCompleted
+        for visual in visuals.values { visual.setRestCompleted(restCompleted) }
         reconcile()
     }
 
@@ -69,6 +77,9 @@ public final class CoverageOrchestrator {
         for id in wanted where visuals[id] == nil {
             let visual = makeVisual(id) { [weak self] in self?.shoo(from: id) ?? .snappedBack }
             visuals[id] = visual
+            // Seed before showing: a display hotplugged after the Rest's timer
+            // elapsed gets an already-awake Visual, never a sleepy flash.
+            visual.setRestCompleted(restCompleted)
             visual.show()
         }
     }

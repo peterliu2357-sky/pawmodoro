@@ -103,6 +103,10 @@ final class VisualWindowController: CoverageVisual {
         dimWindow.orderOut(nil)
     }
 
+    func setRestCompleted(_ restCompleted: Bool) {
+        cat.setRestCompleted(restCompleted)
+    }
+
     // MARK: - Floating drift
 
     /// The wandering target the cat window springs toward. The path math lives in

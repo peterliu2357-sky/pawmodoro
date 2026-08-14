@@ -14,10 +14,12 @@ final class FakeDisplayProvider: DisplayProvider {
 @MainActor
 final class FakeVisual: CoverageVisual {
     private(set) var isShown = false
+    private(set) var restCompleted = false
     private let onShoo: () -> ShooOutcome
     init(onShoo: @escaping () -> ShooOutcome) { self.onShoo = onShoo }
     func show() { isShown = true }
     func close() { isShown = false }
+    func setRestCompleted(_ restCompleted: Bool) { self.restCompleted = restCompleted }
 
     /// Models a real flick: report the Shoo, and on `.accepted` the Visual
     /// closes itself as part of its fly-off (the orchestrator clears the rest).
@@ -94,6 +96,30 @@ final class FakeVisual: CoverageVisual {
         shown().first?.flickOffEdge()   // an early Shoo, rejected
 
         #expect(shown().count == 2)
+    }
+
+    @Test func restCompletionIsForwardedToEveryVisual() {
+        let displays = FakeDisplayProvider([DisplayID(1), DisplayID(2)])
+        let (orchestrator, shown) = makeOrchestrator(displays: displays)
+
+        orchestrator.update(covering: true)                       // Rest running
+        #expect(shown().allSatisfy { !$0.restCompleted })
+
+        orchestrator.update(covering: true, restCompleted: true)  // timer hit 00:00
+        #expect(shown().allSatisfy { $0.restCompleted })
+    }
+
+    @Test func aVisualCreatedByHotplugReceivesTheCurrentRestCompletion() {
+        let displays = FakeDisplayProvider([DisplayID(1)])
+        let (orchestrator, shown) = makeOrchestrator(displays: displays)
+        orchestrator.update(covering: true)
+        orchestrator.update(covering: true, restCompleted: true)   // timer hit 00:00
+
+        displays.displays = [DisplayID(1), DisplayID(2)]           // monitor plugged in
+        orchestrator.displaysChanged()
+
+        #expect(shown().count == 2)
+        #expect(shown().allSatisfy { $0.restCompleted })
     }
 
     @Test func displayHotplugUpdatesTheVisualSetMidRest() {
