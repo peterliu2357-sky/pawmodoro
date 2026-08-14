@@ -44,9 +44,12 @@ _Avoid_: dismiss, close, drag-out
 
 **Emergency Shoo**:
 A deliberately low-key override (a keyboard shortcut or a small menu-bar item)
-that force-clears a Rest immediately, ignoring Snap-back. Always available but
-never advertised, so the app never truly traps the user. A Rest is the only
-thing it ends; the Work loop continues.
+that force-clears a Rest immediately, ignoring Snap-back. Never advertised, and
+capped at 3 per day (the count resets at midnight) so escaping a Rest stays an
+emergency rather than a reflex. The cap lives only in memory: quitting and
+relaunching the app refills it — deliberately inconvenient, so the app still
+never truly traps the user. A Rest is the only thing it ends; the Work loop
+continues.
 _Avoid_: skip, cancel, force-quit
 
 **Snap-back**:

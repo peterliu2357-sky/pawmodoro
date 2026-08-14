@@ -25,6 +25,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private let stopItem = NSMenuItem(title: "Stop", action: #selector(stop), keyEquivalent: "")
     private let pauseItem = NSMenuItem(title: "Pause", action: #selector(pauseOrResume), keyEquivalent: "")
     private let restNowItem = NSMenuItem(title: "Take a Rest Now", action: #selector(takeRestNow), keyEquivalent: "")
+    private let emergencyItem = NSMenuItem(title: "Emergency Shoo", action: #selector(emergencyShoo), keyEquivalent: ".")
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         coverage = CoverageOrchestrator(
@@ -63,6 +64,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     private func buildMenu() {
         let menu = NSMenu()
+        // renderStatus drives every item's enabled state by hand; without this,
+        // AppKit auto-enables anything whose target responds to its action.
+        menu.autoenablesItems = false
         startItem.target = self
         stopItem.target = self
         pauseItem.target = self
@@ -77,10 +81,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         menu.addItem(settings)
         // Deliberately low-key: a plain item near the bottom, showing its
         // shortcut as a hint, not advertised as a primary control.
-        let emergency = NSMenuItem(title: "Emergency Shoo", action: #selector(emergencyShoo), keyEquivalent: ".")
-        emergency.keyEquivalentModifierMask = [.control, .option, .command]
-        emergency.target = self
-        menu.addItem(emergency)
+        emergencyItem.keyEquivalentModifierMask = [.control, .option, .command]
+        emergencyItem.target = self
+        menu.addItem(emergencyItem)
         let quit = NSMenuItem(title: "Quit Pawmodoro", action: #selector(NSApplication.terminate(_:)), keyEquivalent: "q")
         menu.addItem(quit)
         statusItem.menu = menu
@@ -207,6 +210,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     private func renderStatus() {
+        // The Emergency Shoo is capped per day (the engine enforces it; the
+        // hotkey just no-ops once spent). Surface the count so hitting the cap
+        // is never a surprise.
+        let shoosLeft = engine.emergencyShoosRemaining()
+        emergencyItem.title = "Emergency Shoo (\(shoosLeft) left today)"
+        emergencyItem.isEnabled = shoosLeft > 0
+
         // Pause/Resume is offered only around a Work Session — never during a
         // Rest (the enforced part) or while idle.
         // "Take a Rest Now" is offered everywhere except during a Rest, where

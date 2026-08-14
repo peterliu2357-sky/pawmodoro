@@ -25,15 +25,33 @@ public enum ShooOutcome: Equatable, Sendable {
 /// Pure domain logic for the Work loop. Holds no AppKit dependency; time comes
 /// from an injected `Clock` so behavior is fully testable.
 public struct SessionEngine: Sendable {
+    /// How many Emergency Shoos a single day allows. The cap makes reflexively
+    /// escaping every Rest costly without truly trapping anyone: it lives only
+    /// in memory, so quitting and relaunching the app is the (deliberately
+    /// inconvenient) way past it.
+    public static let emergencyShooDailyLimit = 3
+
     public private(set) var workDuration: TimeInterval
     public private(set) var restDuration: TimeInterval
     private let clock: Clock
+    private let calendar: Calendar
     public private(set) var state: SessionState
 
-    public init(workDuration: TimeInterval = 25 * 60, restDuration: TimeInterval = 5 * 60, clock: Clock) {
+    // The day (start-of-day) the last Emergency Shoo was consumed in, and how
+    // many that day has consumed. A day change simply makes both stale.
+    private var emergencyShooDay: Date?
+    private var emergencyShoosUsed = 0
+
+    public init(
+        workDuration: TimeInterval = 25 * 60,
+        restDuration: TimeInterval = 5 * 60,
+        clock: Clock,
+        calendar: Calendar = .current
+    ) {
         self.workDuration = workDuration
         self.restDuration = restDuration
         self.clock = clock
+        self.calendar = calendar
         self.state = .idle
     }
 
@@ -113,7 +131,23 @@ public struct SessionEngine: Sendable {
     /// and we must not reset a running Work Session out from under the user.
     public mutating func emergencyShoo() {
         guard case .resting = state else { return }
+        guard emergencyShoosRemaining() > 0 else { return }
+        let today = calendar.startOfDay(for: clock.now)
+        if emergencyShooDay != today {      // first consumption of a fresh day
+            emergencyShooDay = today
+            emergencyShoosUsed = 0
+        }
+        emergencyShoosUsed += 1
         start()
+    }
+
+    /// How many Emergency Shoos are left today. Full again once the calendar
+    /// day rolls over at midnight.
+    public func emergencyShoosRemaining() -> Int {
+        guard let day = emergencyShooDay, calendar.isDate(clock.now, inSameDayAs: day) else {
+            return Self.emergencyShooDailyLimit
+        }
+        return max(0, Self.emergencyShooDailyLimit - emergencyShoosUsed)
     }
 
     /// Seconds left in the current Work Session, derived from the wall-clock

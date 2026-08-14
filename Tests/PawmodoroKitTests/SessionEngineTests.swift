@@ -163,6 +163,67 @@ final class TestClock: Clock, @unchecked Sendable {
         #expect(engine.state == .idle)
     }
 
+    @Test func emergencyShooConsumesOneOfThreeDailyUses() {
+        let clock = TestClock()
+        var engine = SessionEngine(workDuration: 25 * 60, restDuration: 5 * 60, clock: clock)
+        #expect(engine.emergencyShoosRemaining() == 3)
+
+        engine.startRest()
+        engine.emergencyShoo()
+
+        #expect(engine.emergencyShoosRemaining() == 2)
+    }
+
+    @Test func fourthEmergencyShooOfTheDayIsRejectedAndTheRestKeepsRunning() {
+        let clock = TestClock()
+        var engine = SessionEngine(workDuration: 25 * 60, restDuration: 5 * 60, clock: clock)
+        for _ in 1...3 {                    // burn the whole daily budget
+            engine.startRest()
+            engine.emergencyShoo()
+        }
+        #expect(engine.emergencyShoosRemaining() == 0)
+
+        engine.startRest()
+        let restEnd = clock.now + 5 * 60
+        engine.emergencyShoo()              // the exploit attempt
+
+        #expect(engine.state == .resting(endsAt: restEnd))
+        #expect(engine.emergencyShoosRemaining() == 0)
+    }
+
+    @Test func emergencyShooBudgetIsFullAgainAfterMidnight() {
+        // A fixed-zone calendar so the test's midnight is the engine's midnight.
+        var calendar = Calendar(identifier: .gregorian)
+        calendar.timeZone = TimeZone(identifier: "UTC")!
+        let clock = TestClock(Date(timeIntervalSinceReferenceDate: 22 * 3600))  // 22:00 UTC
+        var engine = SessionEngine(workDuration: 25 * 60, restDuration: 5 * 60, clock: clock, calendar: calendar)
+        for _ in 1...3 {                    // burn the whole daily budget
+            engine.startRest()
+            engine.emergencyShoo()
+        }
+        #expect(engine.emergencyShoosRemaining() == 0)
+
+        clock.advance(by: 3 * 3600)         // 01:00 the next day
+        #expect(engine.emergencyShoosRemaining() == 3)
+
+        engine.startRest()
+        engine.emergencyShoo()              // a fresh day's budget is spendable
+
+        #expect(engine.state == .working(endsAt: clock.now + 25 * 60))
+        #expect(engine.emergencyShoosRemaining() == 2)
+    }
+
+    @Test func emergencyShooOutsideARestConsumesNoBudget() {
+        let clock = TestClock()
+        var engine = SessionEngine(workDuration: 25 * 60, restDuration: 5 * 60, clock: clock)
+
+        engine.emergencyShoo()              // idle — nothing to escape
+        engine.start()
+        engine.emergencyShoo()              // working — a no-op too
+
+        #expect(engine.emergencyShoosRemaining() == 3)
+    }
+
     @Test func pauseFreezesTheRemainingTimeAcrossClockAdvancement() {
         let clock = TestClock()
         var engine = SessionEngine(workDuration: 25 * 60, clock: clock)
